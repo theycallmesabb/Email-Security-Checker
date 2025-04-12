@@ -7,29 +7,76 @@ import (
 	"net"
 	"os"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
-func main() {
-	scanner := bufio.NewScanner(os.Stdin)                             // User input lene ke liye scanner banaya
-	fmt.Printf("domain,hasMX,hasSPF,spRecord,hasDMARC,dmarcRecord\n") // CSV format me output dene ke liye header
+// Result slice to store all domain checks
+var Result []DomainInfo
 
-	// Har inputted domain ka check karega
+// Struct to hold details of a domain
+type DomainInfo struct {
+	Domain      string `json:"domain"`
+	HasMX       bool   `json:"hasMX"`
+	HasSPF      bool   `json:"hasSPF"`
+	SPFRecord   string `json:"spfRecord"`
+	HasDMARC    bool   `json:"hasDMARC"`
+	DMARCRecord string `json:"dmarcRecord"`
+}
+
+func main() {
+	// Scanner to take user input from terminal
+	router := gin.Default()
+	router.GET("/check/:domain", func(c *gin.Context) {
+		domain := c.Param("domain")
+		info := checkDomain(domain)
+		c.JSON(200, info)
+	})
+
+	router.Run(":8080")
+
+	scanner := bufio.NewScanner(os.Stdin)
+
+	// Print header in CSV style
+	fmt.Printf("domain,hasMX,hasSPF,spfRecord,hasDMARC,dmarcRecord\n")
+
+	// Loop: for every domain entered, check its records
 	for scanner.Scan() {
-		checkDomain(scanner.Text())
+		domain := scanner.Text()
+		info := checkDomain(domain)   // check DNS records
+		Result = append(Result, info) // add to result list
+		printdomain(info)             // print result
 	}
 
-	// Agar scanner me koi error aata hai toh usko handle karega
+	// If there's a scanning error, show it
 	if err := scanner.Err(); err != nil {
-		log.Fatal("Error", err)
+		log.Fatal("Error:", err)
 	}
 }
 
-// Domain ka MX, SPF, aur DMARC records check karne wali function
-func checkDomain(domain string) {
-	var hasMX, hasSPF, hasDMARC bool
-	var spRecord, dmarcRecord string
+func runScanner() {
+	scanner := bufio.NewScanner(os.Stdin) // Scanner for reading user input from terminal
 
-	// MX records check kar raha hai
+	// Print CSV header
+	fmt.Printf("domain,hasMX,hasSPF,spfRecord,hasDMARC,dmarcRecord\n")
+
+	// Loop through each domain entered by user
+	for scanner.Scan() {
+		domain := scanner.Text()
+		info := checkDomain(domain)       // Get domain info
+		Result = append(Result, info)     // Store in results slice
+		fmt.Printf("%v,%v,%v,%v,%v,%v\n", // Print output in CSV format
+			info.Domain, info.HasMX, info.HasSPF, info.SPFRecord, info.HasDMARC, info.DMARCRecord)
+	}
+
+}
+
+// Domain ka MX, SPF, aur DMARC records check karne wali function
+func checkDomain(domain string) DomainInfo {
+
+	var hasMX, hasSPF, hasDMARC bool
+	var spfRecord, dmarcRecord string
+
 	mxRecords, err := net.LookupMX(domain)
 	if err != nil {
 		log.Print(err) // Agar error aayi toh log me print karega
@@ -48,7 +95,7 @@ func checkDomain(domain string) {
 	for _, record := range txtRecords {
 		if strings.HasPrefix(record, "v=spf1") { // Agar record "v=spf1" se shuru ho raha hai toh SPF valid hai
 			hasSPF = true
-			spRecord = record
+			spfRecord = record
 			break
 		}
 	}
@@ -67,7 +114,19 @@ func checkDomain(domain string) {
 			break
 		}
 	}
+	// Return all info in a struct
+	return DomainInfo{
+		Domain:      domain,
+		HasMX:       hasMX,
+		HasSPF:      hasSPF,
+		SPFRecord:   spfRecord,
+		HasDMARC:    hasDMARC,
+		DMARCRecord: dmarcRecord,
+	}
 
-	// Final result print kar raha hai CSV format me
-	fmt.Printf("%v,%v,%v,%v,%v,%v\n", domain, hasMX, hasSPF, spRecord, hasDMARC, dmarcRecord)
+}
+func printdomain(info DomainInfo) {
+	fmt.Printf("%v,%v,%v,%v,%v,%v\n",
+		info.Domain, info.HasMX, info.HasSPF,
+		info.SPFRecord, info.HasDMARC, info.DMARCRecord)
 }
